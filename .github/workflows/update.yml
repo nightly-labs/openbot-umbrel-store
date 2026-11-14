@@ -1,0 +1,131 @@
+# Makes the app folder of the latest OpenBot release with the generator of that release
+# (scripts/umbrel-app.ts in nightly-labs/openbot) and commits it. It never goes to an older release.
+name: Update OpenBot
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The OpenBot release (x.y.z). Empty means the latest release.
+        required: false
+      source-ref:
+        description: The OpenBot ref of the generator. Empty means the tag of the release.
+        required: false
+      dry-run:
+        description: Make the app folder as an artifact, with no commit.
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+env:
+  APP_ID: openbot-server
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Find the release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$VERSION" ]]; then
+            tag=$(gh release list --repo nightly-labs/openbot --exclude-drafts --exclude-pre-releases \
+              --limit 50 --json tagName --jq '[.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))][0].tagName')
+            VERSION=${tag#v}
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Not an OpenBot release: '$VERSION'." >&2
+            exit 1
+          fi
+          current=""
+          if [[ -f "$APP_ID/umbrel-app.yml" ]]; then
+            current=$(sed -n 's/^version: "\(.*\)"$/\1/p' "$APP_ID/umbrel-app.yml")
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$DRY_RUN" == "true" ]]; then
+            echo "make=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$current" == "$VERSION" ]]; then
+            echo "The store has $VERSION."
+            echo "make=false" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$current" && "$(printf '%s\n%s\n' "$current" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]]; then
+            # An older image can not open the database of a newer release.
+            echo "$VERSION is older than $current. The store never goes back." >&2
+            exit 1
+          else
+            echo "make=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out the OpenBot generator
+        if: steps.release.outputs.make == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: nightly-labs/openbot
+          ref: ${{ inputs.source-ref || format('v{0}', steps.release.outputs.version) }}
+          path: openbot-source
+          persist-credentials: false
+
+      - name: Set up Bun
+        if: steps.release.outputs.make == 'true'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: openbot-source/package.json
+
+      - name: Make the app folder
+        id: app
+        if: steps.release.outputs.make == 'true'
+        working-directory: openbot-source
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Releases before the setup page and the --id option have no app for a community store.
+          if ! grep -q "__APP_ID__" docker/umbrel/openbot/umbrel-app.yml 2>/dev/null; then
+            echo "::notice::OpenBot $VERSION has no Umbrel app for a community store. No change."
+            echo "made=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The generator needs no native build. The scripts of the install download Electron.
+          bun install --frozen-lockfile --ignore-scripts
+          bun scripts/umbrel-app.ts --version "$VERSION" --id "$APP_ID" --out "$GITHUB_WORKSPACE/$APP_ID"
+          # A release before the --id option writes the id `openbot`, which this store can not use.
+          grep -qx "id: $APP_ID" "$GITHUB_WORKSPACE/$APP_ID/umbrel-app.yml"
+          grep -q "APP_HOST: ${APP_ID}_server_1" "$GITHUB_WORKSPACE/$APP_ID/docker-compose.yml"
+          echo "made=true" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the app folder
+        if: steps.app.outputs.made == 'true' && inputs.dry-run
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.APP_ID }}
+          path: ${{ env.APP_ID }}
+
+      - name: Commit the app folder
+        if: steps.app.outputs.made == 'true' && !inputs.dry-run
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "$APP_ID"
+          if git diff --cached --quiet; then
+            echo "No change."
+            exit 0
+          fi
+          git commit -m "Update OpenBot to $VERSION"
+          git push
