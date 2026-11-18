@@ -4,7 +4,7 @@ storage:
   dataRoot: data
 category: ai
 name: OpenBot
-version: "0.72.0"
+version: "0.73.0"
 tagline: A server for your AI agents
 icon: https://openbot.run/icon-512x512.png
 description: >-

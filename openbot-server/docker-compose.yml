@@ -11,7 +11,7 @@ services:
       APP_PORT: 8080
 
   server:
-    image: ghcr.io/nightly-labs/openbot:0.72.0@sha256:516e7cf80e606c8437b6f363c1eb7c399ca20a8cae157237cc0c941246c61db7
+    image: ghcr.io/nightly-labs/openbot:0.73.0@sha256:20ecb481d3d782b754b8bba6dc4dbaf1f84c4e72b569611330e22c3ef2bd1f9b
     # OpenBot exits with 0 when an owner restarts the server from the app. Docker must start it again.
     restart: unless-stopped
     # OpenBot stops its agents and closes its database before it exits.
