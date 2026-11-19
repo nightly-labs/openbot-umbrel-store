@@ -1,26 +1,17 @@
-# The Umbrel app of OpenBot (docs/umbrel.md in the OpenBot repository). `scripts/umbrel-app.ts` writes it
-# from a template, with the version and the image digest of one release.
 version: "3.7"
 
 services:
   app_proxy:
     environment:
-      # <app id>_<service>_1, the container name that Umbrel gives the service.
       APP_HOST: openbot-server_server_1
-      # The setup page of the container (src/main/server-setup-page.ts). Umbrel's login protects it.
       APP_PORT: 8080
 
   server:
-    image: ghcr.io/nightly-labs/openbot:0.73.0@sha256:20ecb481d3d782b754b8bba6dc4dbaf1f84c4e72b569611330e22c3ef2bd1f9b
-    # OpenBot exits with 0 when an owner restarts the server from the app. Docker must start it again.
+    image: ghcr.io/nightly-labs/openbot:0.74.0@sha256:696a6737686c989d07881a18de759e6615d5476fe081b7a56dfbb7e929336c28
     restart: unless-stopped
-    # OpenBot stops its agents and closes its database before it exits.
     stop_grace_period: 1m
-    # Chromium uses shared memory. The Docker default of 64 MB is too small.
     shm_size: "1gb"
     security_opt:
-      # The Docker default profile, with user namespaces for the Electron sandbox. Without it, the
-      # container stops: OpenBot never runs Chromium with --no-sandbox.
       - seccomp=${APP_DATA_DIR}/seccomp.json
       - no-new-privileges:true
     volumes:
