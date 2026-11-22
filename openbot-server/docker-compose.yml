@@ -7,7 +7,7 @@ services:
       APP_PORT: 8080
 
   server:
-    image: ghcr.io/nightly-labs/openbot:0.76.0@sha256:1bd110549b5a90a9de2b4be3251c0c7686cd73fbee2b9ab9464ab330fce8f1b8
+    image: ghcr.io/nightly-labs/openbot:0.76.1@sha256:5ec0984cf1eaa9b9b81bf19d05315b0696bdfbb08bad6240ebfed9a85355f9d2
     restart: unless-stopped
     stop_grace_period: 1m
     shm_size: "1gb"
